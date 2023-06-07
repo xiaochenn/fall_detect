@@ -176,14 +176,13 @@ def filter_box(org_box, conf_thres, iou_thres):  # 过滤掉无用的框
     return output
 
 
-def draw(image, box_data,fps):
+def draw(image, box_data):
     # -------------------------------------------------------
     #	取整，方便画框
     # -------------------------------------------------------
     boxes = box_data[..., :4].astype(np.int32)
     scores = box_data[..., 4]
     classes = box_data[..., 5].astype(np.int32)
-    cv2.putText(image, "FPS: {:.2f}".format(fps), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
     for box, score, cl in zip(boxes, scores, classes):
         top, left, right, bottom = box
         print('class: {}, score: {}'.format(CLASSES[cl], score))
@@ -202,22 +201,27 @@ def cap_check():
     global buzzer_flag
     global is_running
     global fps_counter
+    global start_time
     while is_running:
-        fps_counter += 1
-        if fps_counter >= 15:
-            fps = fps_counter / (time.time() - start_time)
-            start_time = time.time()
-            fps_counter = 0
         ret, frame = cap.read()
         if ret:
+            fps_counter += 1  # 计算帧数
+
             output, or_img = model.inference(frame)
             outbox = filter_box(output, 0.5, 0.5)
             if (len(outbox) != 0):
-                draw(or_img, outbox,fps)
+                draw(or_img, outbox)
                 buzzer_flag = True
             else:
                 buzzer_flag = False
+            if (time.time() - start_time) != 0:  # 实时显示帧数
+                cv2.putText(or_img, "FPS {0}".format(float('%.1f' % (fps_counter / (time.time() - start_time)))), (30, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255),
+                            2)
             cv2.imshow('res.jpg', or_img)
+            print("FPS: ", fps_counter / (time.time() - start_time))
+            fps_counter = 0
+            start_time = time.time()
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
@@ -250,16 +254,17 @@ def makerobo_setup():  # 初始化函数
 
 
 def makerobo_rgb_off():
-    for i in pins:
-        GPIO.output(pins[i], GPIO.LOW)
-
-
-def makerobo_rgb_on():
-    # for i in pins:
-    #     GPIO.output(pins[i],GPIO.HIGH)
+    # 关闭所有灯，不亮
     p_R.ChangeDutyCycle(0)
     p_G.ChangeDutyCycle(0)
     p_B.ChangeDutyCycle(0)
+
+
+def makerobo_rgb_on():
+    # 打开所有颜色，全亮，显示为近白光
+    p_R.ChangeDutyCycle(50)
+    p_G.ChangeDutyCycle(50)
+    p_B.ChangeDutyCycle(50)
 
 
 def makerobo_loop():  # 循环函数
@@ -328,9 +333,9 @@ def destroy():
 
 
 if __name__ == "__main__":
+    check = threading.Thread(target=cap_check)
+    check.start()
     try:
-        check = threading.Thread(target=cap_check)
-        check.start()
         makerobo_setup()
         while True:
             makerobo_loop()
@@ -341,7 +346,3 @@ if __name__ == "__main__":
         check.join()
         cap.release()
         cv2.destroyAllWindows()
-
-
-
-
